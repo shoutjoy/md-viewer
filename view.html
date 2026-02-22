@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>문서 뷰어</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+  <style>
+    /* ── 기본 레이아웃 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Figtree', sans-serif;
+      background: #6a6e7e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 0 60px;
+    }
+
+    /* ── 상단 툴바 ── */
+    #toolbar {
+      width: 100%;
+      background: #1a1a2e;
+      color: #e0e0f0;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      flex-wrap: wrap;
+    }
+
+    #toolbar .logo {
+      font-size: 13px;
+      font-weight: 700;
+      color: #a090ff;
+      letter-spacing: .03em;
+      white-space: nowrap;
+    }
+
+    #doc-title {
+      font-size: 13px;
+      color: #c0c0e0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #toolbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.15); flex-shrink: 0; }
+
+    .tb-btn {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.12);
+      color: #c0c0e0;
+      border-radius: 6px;
+      padding: 5px 13px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, color .15s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .tb-btn:hover { background: rgba(255,255,255,.15); color: #fff; }
+
+    /* ── 로딩 / 에러 상태 ── */
+    #status-box {
+      margin-top: 80px;
+      background: #1a1a2e;
+      border-radius: 14px;
+      padding: 40px 48px;
+      text-align: center;
+      color: #c0c0e0;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 8px 40px rgba(0,0,0,.4);
+    }
+    #status-box .icon { font-size: 40px; margin-bottom: 14px; }
+    #status-box .msg  { font-size: 14px; line-height: 1.7; }
+    #status-box .sub  { font-size: 11px; color: #7070a0; margin-top: 8px; }
+    #status-box .err  { color: #f76a6a; }
+
+    /* ── 페이지 컨테이너 ── */
+    #pages {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 0;
+      width: 100%;
+    }
+
+    /* ── A4 문서 페이지 (에디터 preview-page와 동일) ── */
+    .preview-page {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      color: #1a1a2e;
+      padding: 22mm 18mm;
+      box-shadow: 0 6px 40px rgba(0,0,0,.5);
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-size: 11pt;
+      line-height: 1.8;
+      word-break: break-word;
+      position: relative;
+      margin-bottom: 20px;
+    }
+    .preview-page::after {
+      content: "— " attr(data-page) " —";
+      position: absolute;
+      bottom: 10mm; left: 50%;
+      transform: translateX(-50%);
+      font-family: sans-serif;
+      font-size: 9pt;
+      color: #bbb;
+      white-space: nowrap;
+    }
+    .preview-page h1 { font-size: 21pt; font-weight: 700; margin: 0 0 14px; border-bottom: 2.5px solid #1a1a2e; padding-bottom: 8px; }
+    .preview-page h2 { font-size: 15pt; font-weight: 700; margin: 20px 0 10px; }
+    .preview-page h3 { font-size: 12pt; font-weight: 700; margin: 16px 0 7px; color: #2a2a3e; }
+    .preview-page h4 { font-size: 11pt; font-weight: 700; margin: 14px 0 5px; }
+    .preview-page p  { margin: 0 0 11px; }
+    .preview-page ul,
+    .preview-page ol { margin: 0 0 11px; padding-left: 22px; }
+    .preview-page li { margin-bottom: 3px; }
+    .preview-page blockquote {
+      border-left: 3px solid #5b4ce4; margin: 14px 0;
+      padding: 7px 14px; background: #f5f5ff;
+      color: #3a3a5e; font-style: italic;
+    }
+    .preview-page code {
+      font-family: 'JetBrains Mono', monospace; font-size: 9pt;
+      background: #f0f0f8; padding: 1px 4px; border-radius: 3px; color: #5b4ce4;
+    }
+    .preview-page pre {
+      background: #1a1a2e; color: #e8e8f0;
+      padding: 14px; border-radius: 6px; overflow-x: auto; margin: 11px 0; font-size: 9pt;
+    }
+    .preview-page pre code { background: none; color: inherit; padding: 0; }
+    .preview-page table { width: 100%; border-collapse: collapse; margin: 11px 0; font-size: inherit; }
+    .preview-page th { background: #1a1a2e; color: #fff; padding: 7px 11px; text-align: left; font-weight: 600; }
+    .preview-page td { padding: 6px 11px; border: 1px solid #d0d0e0; }
+    .preview-page tr:nth-child(even) td { background: #f7f7fc; }
+    .preview-page img { max-width: 100%; }
+    .preview-page a { color: #5b4ce4; text-decoration: underline; text-underline-offset: 2px; }
+    .preview-page a[href^="http"]::after { content: " ↗"; font-size: 8pt; opacity: .5; }
+    .preview-page .ref-block { border-top: 1px solid #d0d0e0; margin-top: 28px; padding-top: 10px; font-size: 9pt; color: #4a4a6a; }
+    .preview-page .footnote-highlight { background: #f0f0f0; color: #1a1a2e; border-radius: 2px; padding: 0 2px; }
+    .preview-page .footnote-def { background: #f5f5f5; color: #1a1a2e; border-left: 3px solid #bbb; padding: 4px 10px; margin: 4px 0; font-size: 9.5pt; }
+    .preview-page .footnotes-section { border-top: 1px solid #d0d0e0; margin-top: 24px; padding-top: 10px; font-size: 9.5pt; color: #444; }
+
+    /* ── 페이지 카운터 배지 ── */
+    #pg-badge {
+      position: fixed;
+      bottom: 20px; right: 24px;
+      background: rgba(26,26,46,.85);
+      color: #a090ff;
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(160,144,255,.3);
+      display: none;
+    }
+
+    /* ── 인쇄 ── */
+    @media print {
+      body { background: none; padding: 0; }
+      #toolbar, #pg-badge { display: none !important; }
+      .preview-page { box-shadow: none; margin: 0; page-break-after: always; width: 100%; min-height: 0; }
+      .preview-page:last-child { page-break-after: auto; }
+    }
+
+    /* ── 모바일 대응 ── */
+    @media (max-width: 230mm) {
+      .preview-page { width: 100%; min-height: auto; padding: 24px 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 툴바 -->
+<div id="toolbar">
+  <span class="logo">📄 MD Viewer</span>
+  <div class="sep"></div>
+  <span id="doc-title">문서 불러오는 중…</span>
+  <div style="flex:1"></div>
+  <button class="tb-btn" onclick="window.print()">🖨 인쇄</button>
+  <button class="tb-btn" id="btn-share" onclick="copyLink()" style="display:none">🔗 링크 복사</button>
+</div>
+
+<!-- 상태 박스 (로딩 / 에러) -->
+<div id="status-box">
+  <div class="icon" id="st-icon">⏳</div>
+  <div class="msg" id="st-msg">문서를 불러오는 중입니다…</div>
+  <div class="sub" id="st-sub"></div>
+</div>
+
+<!-- 렌더된 페이지들 -->
+<div id="pages" style="display:none"></div>
+
+<!-- 페이지 번호 배지 -->
+<div id="pg-badge">1 / 1</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   URL 파라미터 파싱
+   지원 형식:
+     ?repo=owner/repo&path=folder/file.md
+     ?repo=owner/repo&branch=main&path=folder/file.md
+     ?repo=owner/repo&path=folder/file.md&token=ghp_xxx  (private 저장소)
+═══════════════════════════════════════════════════════ */
+const params  = new URLSearchParams(location.search);
+const repo    = params.get('repo');      // "owner/repo"
+const branch  = params.get('branch') || 'main';
+const filePath= params.get('path');      // "folder/file.md"
+const token   = params.get('token') || '';  // private 저장소용 (선택)
+
+/* ── marked 설정 (에디터와 동일) ── */
+marked.setOptions({ breaks: true, gfm: true });
+const _r = new marked.Renderer();
+_r.heading = (text, level) => {
+  const plain = text
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&[a-z]+;/g, '')
+    .trim();
+  const id = 'h-' + plain.toLowerCase()
+    .replace(/[^a-z0-9가-힣\s]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 50);
+  return `<h${level} id="${id}">${text}</h${level}>`;
+};
+_r.link = (href, title, text) =>
+  `<a href="${href}"${title ? ` title="${title}"` : ''} target="_blank" rel="noopener noreferrer">${text}</a>`;
+marked.use({ renderer: _r });
+
+/* ── mdRender (에디터와 동일) ── */
+function mdRender(md) {
+  try {
+    let fnDefs = {}; let fnCounter = 0;
+    md = md.replace(/^\[\^([^\]]+)\]:\s*(.+)$/gm, (m, key, text) => {
+      fnDefs[key] = text; return '__FN_DEF_' + key + '__';
+    });
+    md = md.replace(/\[\^([^\]]+)\]/g, (m, key) => {
+      fnCounter++;
+      return `<sup class="footnote-highlight" title="${fnDefs[key] || ''}">[${fnCounter}]</sup>`;
+    });
+    md = md.replace(/__FN_DEF_[^_]+__\n?/g, '');
+    md = md.replace(/\*\*([^*\n]*[()[\]{}][^*\n]*)\*\*/g, (m, inner) => `<b>${inner}</b>`);
+    let html = marked.parse(md || '');
+    if (Object.keys(fnDefs).length > 0) {
+      let fnHtml = '<div class="footnotes-section">';
+      let i = 1;
+      Object.entries(fnDefs).forEach(([k, v]) => { fnHtml += `<div class="footnote-def"><sup>[${i}]</sup> ${v}</div>`; i++; });
+      fnHtml += '</div>';
+      html += fnHtml;
+    }
+    return html;
+  } catch(e) { return `<p style="color:red">${e.message}</p>`; }
+}
+
+/* ── 페이지 분리 (에디터와 동일) ── */
+function splitPages(md) {
+  const p = md.replace(/\r\n/g, '\n').split(/\n?<div class="page-break"><\/div>\n?/);
+  return p.length ? p : [md];
+}
+
+/* ── 상태 표시 ── */
+function setStatus(icon, msg, sub, isErr) {
+  document.getElementById('st-icon').textContent = icon;
+  document.getElementById('st-msg').innerHTML = isErr
+    ? `<span class="err">${msg}</span>` : msg;
+  document.getElementById('st-sub').textContent = sub || '';
+}
+
+/* ── 링크 복사 ── */
+function copyLink() {
+  navigator.clipboard.writeText(location.href).then(() => {
+    const btn = document.getElementById('btn-share');
+    const orig = btn.textContent;
+    btn.textContent = '✅ 복사됨!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
+/* ── 페이지 스크롤 → 현재 번호 갱신 ── */
+function bindScroll() {
+  const badge = document.getElementById('pg-badge');
+  const pages = document.querySelectorAll('.preview-page');
+  if (pages.length <= 1) return;
+  badge.style.display = 'block';
+  badge.textContent = `1 / ${pages.length}`;
+  window.addEventListener('scroll', () => {
+    const mid = window.scrollY + window.innerHeight * 0.3;
+    let cur = 0;
+    pages.forEach((p, i) => { if (p.offsetTop <= mid) cur = i; });
+    badge.textContent = `${cur + 1} / ${pages.length}`;
+  }, { passive: true });
+}
+
+/* ══════════════════════════════════════════════════════
+   메인: GitHub API로 파일 가져와 렌더
+══════════════════════════════════════════════════════ */
+async function load() {
+  /* 파라미터 검증 */
+  if (!repo || !filePath) {
+    setStatus('⚠️',
+      'URL에 <b>repo</b>와 <b>path</b> 파라미터가 필요합니다.',
+      '예) view.html?repo=owner/repo&path=folder/file.md', true);
+    return;
+  }
+
+  /* 파일명을 제목으로 */
+  const fileName = filePath.split('/').pop().replace(/\.[^.]+$/, '');
+  document.title = fileName + ' — MD Viewer';
+  document.getElementById('doc-title').textContent = fileName;
+
+  try {
+    /* GitHub Contents API */
+    const apiUrl = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(filePath)}?ref=${branch}`;
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    if (token) headers['Authorization'] = `token ${token}`;
+
+    const res  = await fetch(apiUrl, { headers });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (res.status === 404) {
+        setStatus('🔍', '파일을 찾을 수 없습니다.',
+          `저장소: ${repo}  경로: ${filePath}`, true);
+      } else if (res.status === 403 || res.status === 401) {
+        setStatus('🔒', '비공개 저장소입니다.',
+          'URL에 token 파라미터를 추가하거나 저장소를 공개로 설정하세요.', true);
+      } else {
+        setStatus('❌', `GitHub API 오류 (${res.status})`,
+          errData.message || '', true);
+      }
+      return;
+    }
+
+    const data = await res.json();
+
+    /* Base64 디코딩 */
+    const rawMd = decodeURIComponent(
+      escape(atob(data.content.replace(/\n/g, '')))
+    );
+
+    /* 렌더링 */
+    const pagesEl = document.getElementById('pages');
+    const pageArr = splitPages(rawMd);
+
+    pageArr.forEach((pageMd, i) => {
+      const div = document.createElement('div');
+      div.className = 'preview-page';
+      div.dataset.page = i + 1;
+      div.innerHTML = mdRender(pageMd);
+      /* 링크 새 탭 */
+      div.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+      pagesEl.appendChild(div);
+    });
+
+    /* MathJax 수식 렌더 */
+    if (window.MathJax && MathJax.typesetPromise) {
+      MathJax.typesetPromise([pagesEl]).catch(() => {});
+    }
+
+    /* UI 전환 */
+    document.getElementById('status-box').style.display = 'none';
+    pagesEl.style.display = 'flex';
+    document.getElementById('btn-share').style.display = '';
+
+    /* 페이지 번호 */
+    bindScroll();
+
+    /* 문서 정보를 툴바에 */
+    document.getElementById('doc-title').textContent =
+      `${fileName}  ·  ${repo}  ·  ${branch}`;
+
+  } catch(e) {
+    setStatus('❌', '문서를 불러오는 중 오류가 발생했습니다.',
+      e.message, true);
+  }
+}
+
+load();
+</script>
+</body>
+</html>
