@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>MD Viewer</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Figtree', sans-serif;
+      background: #6a6e7e;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 0 60px;
+    }
+
+    /* ── 툴바 ── */
+    #toolbar {
+      width: 100%; background: #1a1a2e; color: #e0e0f0;
+      padding: 10px 24px; display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-size: 13px; font-weight: 700; color: #a090ff; white-space: nowrap; }
+    #doc-title { font-size: 13px; color: #c0c0e0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sep { width: 1px; height: 18px; background: rgba(255,255,255,.15); flex-shrink: 0; }
+    .tb-btn {
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12);
+      color: #c0c0e0; border-radius: 6px; padding: 5px 13px; font-size: 12px;
+      cursor: pointer; white-space: nowrap; transition: background .15s;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .tb-btn:hover { background: rgba(255,255,255,.16); color: #fff; }
+
+    /* ── 로딩 ── */
+    #loading-box {
+      margin-top: 80px; background: #1a1a2e; border-radius: 14px;
+      padding: 40px 48px; text-align: center; color: #c0c0e0;
+      max-width: 480px; width: 90%; box-shadow: 0 8px 40px rgba(0,0,0,.4);
+    }
+    .licon { font-size: 38px; margin-bottom: 14px; }
+    .lmsg  { font-size: 14px; line-height: 1.7; }
+
+    /* ── 에러 ── */
+    #error-box {
+      display: none; margin-top: 60px;
+      background: #1a1a2e; border: 1px solid rgba(247,106,106,.3);
+      border-radius: 14px; padding: 32px 36px;
+      max-width: 560px; width: 92%; box-shadow: 0 8px 40px rgba(0,0,0,.5);
+    }
+    .eicon  { font-size: 36px; text-align: center; margin-bottom: 12px; }
+    .etitle { font-size: 15px; font-weight: 700; color: #f76a6a; text-align: center; margin-bottom: 8px; }
+    .edesc  { font-size: 12px; color: #a0a0c0; line-height: 1.8; text-align: center; margin-bottom: 16px; }
+    .epath  {
+      background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+      font-size: 11px; font-family: 'JetBrains Mono', monospace;
+      color: #c0c0e0; white-space: pre-wrap; line-height: 1.7;
+    }
+    .eurl-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    #eurl-input {
+      flex: 1; background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+      color: #c0c0e0; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+      padding: 8px 10px; outline: none;
+    }
+    #eurl-copy {
+      background: rgba(88,200,248,.15); border: 1px solid rgba(88,200,248,.35);
+      color: #58c8f8; border-radius: 6px; padding: 0 16px;
+      font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+    }
+    .eactions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .eabtn {
+      padding: 8px 18px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      cursor: pointer; text-decoration: none; border: none;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .eabtn-gh { background: rgba(124,106,247,.18); border: 1px solid rgba(124,106,247,.4); color: #c0baff; }
+    .eabtn-reload { background: rgba(106,247,176,.1); border: 1px solid rgba(106,247,176,.3); color: #6af7b0; }
+
+    /* ── A4 문서 ── */
+    #pages { display:flex; flex-direction:column; align-items:center; padding:32px 16px 0; width:100%; }
+    .preview-page {
+      width: 210mm; min-height: 297mm; background: white; color: #1a1a2e;
+      padding: 22mm 18mm; box-shadow: 0 6px 40px rgba(0,0,0,.5);
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-size: 11pt; line-height: 1.8; word-break: break-word;
+      position: relative; margin-bottom: 20px;
+    }
+    .preview-page::after {
+      content: "— " attr(data-page) " —"; position: absolute;
+      bottom: 10mm; left: 50%; transform: translateX(-50%);
+      font-family: sans-serif; font-size: 9pt; color: #bbb; white-space: nowrap;
+    }
+    .preview-page h1 { font-size:21pt;font-weight:700;margin:0 0 14px;border-bottom:2.5px solid #1a1a2e;padding-bottom:8px; }
+    .preview-page h2 { font-size:15pt;font-weight:700;margin:20px 0 10px; }
+    .preview-page h3 { font-size:12pt;font-weight:700;margin:16px 0 7px;color:#2a2a3e; }
+    .preview-page h4 { font-size:11pt;font-weight:700;margin:14px 0 5px; }
+    .preview-page p  { margin:0 0 11px; }
+    .preview-page ul,.preview-page ol { margin:0 0 11px;padding-left:22px; }
+    .preview-page li { margin-bottom:3px; }
+    .preview-page blockquote { border-left:3px solid #5b4ce4;margin:14px 0;padding:7px 14px;background:#f5f5ff;color:#3a3a5e;font-style:italic; }
+    .preview-page code { font-family:'JetBrains Mono',monospace;font-size:9pt;background:#f0f0f8;padding:1px 4px;border-radius:3px;color:#5b4ce4; }
+    .preview-page pre { background:#1a1a2e;color:#e8e8f0;padding:14px;border-radius:6px;overflow-x:auto;margin:11px 0;font-size:9pt; }
+    .preview-page pre code { background:none;color:inherit;padding:0; }
+    .preview-page table { width:100%;border-collapse:collapse;margin:11px 0; }
+    .preview-page th { background:#1a1a2e;color:#fff;padding:7px 11px;text-align:left;font-weight:600; }
+    .preview-page td { padding:6px 11px;border:1px solid #d0d0e0; }
+    .preview-page tr:nth-child(even) td { background:#f7f7fc; }
+    .preview-page img { max-width:100%; }
+    .preview-page a { color:#5b4ce4;text-decoration:underline;text-underline-offset:2px; }
+    .preview-page a[href^="http"]::after { content:" ↗";font-size:8pt;opacity:.5; }
+    .preview-page .footnote-highlight { background:#f0f0f0;color:#1a1a2e;border-radius:2px;padding:0 2px; }
+    .preview-page .footnote-def { background:#f5f5f5;color:#1a1a2e;border-left:3px solid #bbb;padding:4px 10px;margin:4px 0;font-size:9.5pt; }
+    .preview-page .footnotes-section { border-top:1px solid #d0d0e0;margin-top:24px;padding-top:10px;font-size:9.5pt;color:#444; }
+
+    /* ── 페이지 배지 ── */
+    #pg-badge {
+      position:fixed;bottom:20px;right:24px;
+      background:rgba(26,26,46,.85);color:#a090ff;
+      font-size:11px;padding:4px 12px;border-radius:20px;
+      backdrop-filter:blur(6px);border:1px solid rgba(160,144,255,.3);display:none;
+    }
+
+    @media print {
+      body { background:none;padding:0; }
+      #toolbar,#pg-badge,#error-box,#loading-box { display:none!important; }
+      .preview-page { box-shadow:none;margin:0;page-break-after:always;width:100%;min-height:0; }
+      .preview-page:last-child { page-break-after:auto; }
+    }
+    @media (max-width:230mm) {
+      .preview-page { width:100%;min-height:auto;padding:24px 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="logo">📄 MD Viewer</span>
+  <div class="sep"></div>
+  <span id="doc-title">문서 불러오는 중…</span>
+  <div style="flex:1"></div>
+  <button class="tb-btn" onclick="window.print()">🖨 인쇄</button>
+  <button class="tb-btn" id="btn-share" onclick="copyLink()" style="display:none">🔗 링크 복사</button>
+</div>
+
+<div id="loading-box">
+  <div class="licon">⏳</div>
+  <div class="lmsg" id="lmsg">문서를 불러오는 중입니다…</div>
+</div>
+
+<div id="error-box">
+  <div class="eicon"  id="eicon">❌</div>
+  <div class="etitle" id="etitle"></div>
+  <div class="edesc"  id="edesc"></div>
+  <div class="epath"  id="epath" style="display:none"></div>
+  <div style="font-size:10px;color:#6060a0;margin-bottom:5px">공유 URL</div>
+  <div class="eurl-row">
+    <input id="eurl-input" type="text" readonly onclick="this.select()">
+    <button id="eurl-copy" onclick="copyErrUrl()">📋 복사</button>
+  </div>
+  <div class="eactions">
+    <a id="egh-link" href="#" target="_blank" class="eabtn eabtn-gh" style="display:none">🐙 저장소 열기</a>
+    <button class="eabtn eabtn-reload" onclick="location.reload()">↻ 다시 시도</button>
+  </div>
+</div>
+
+<div id="pages" style="display:none"></div>
+<div id="pg-badge">1 / 1</div>
+
+<script>
+/* ── URL 파라미터 ──
+   ?doc=파일명          → ./docs/파일명.md  (같은 저장소)
+   ?doc=파일명&repo=... → GitHub API 방식 (구 방식 호환)
+   ?repo=...&path=...  → GitHub API 방식 (구 방식 호환)
+──────────────────── */
+const params   = new URLSearchParams(location.search);
+const docParam = params.get('doc');   // 파일명 (확장자 제외 가능)
+const repoParam= params.get('repo');
+const branchParam = params.get('branch') || 'main';
+const pathParam= params.get('path');
+const tokenParam = params.get('token') || '';
+
+/* ── marked 설정 ── */
+marked.setOptions({ breaks: true, gfm: true });
+const _r = new marked.Renderer();
+_r.heading = (text, level) => {
+  const plain = text.replace(/<[^>]+>/g,'')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&[a-z]+;/g,'').trim();
+  const id = 'h-' + plain.toLowerCase().replace(/[^a-z0-9가-힣\s]/g,'').replace(/\s+/g,'-').substring(0,50);
+  return `<h${level} id="${id}">${text}</h${level}>`;
+};
+_r.link = (href, title, text) =>
+  `<a href="${href}"${title?` title="${title}"`:''} target="_blank" rel="noopener noreferrer">${text}</a>`;
+marked.use({ renderer: _r });
+
+function mdRender(md) {
+  try {
+    let fnDefs={}, fnCounter=0;
+    md = md.replace(/^\[\^([^\]]+)\]:\s*(.+)$/gm,(m,k,v)=>{ fnDefs[k]=v; return '__FN_DEF_'+k+'__'; });
+    md = md.replace(/\[\^([^\]]+)\]/g,(m,k)=>{ fnCounter++; return `<sup class="footnote-highlight" title="${fnDefs[k]||''}">[${fnCounter}]</sup>`; });
+    md = md.replace(/__FN_DEF_[^_]+__\n?/g,'');
+    md = md.replace(/\*\*([^*\n]*[()[\]{}][^*\n]*)\*\*/g,(m,i)=>`<b>${i}</b>`);
+    let html = marked.parse(md||'');
+    if (Object.keys(fnDefs).length > 0) {
+      let fn='<div class="footnotes-section">'; let i=1;
+      Object.entries(fnDefs).forEach(([k,v])=>{ fn+=`<div class="footnote-def"><sup>[${i}]</sup> ${v}</div>`; i++; });
+      fn+='</div>'; html+=fn;
+    }
+    return html;
+  } catch(e) { return `<p style="color:red">${e.message}</p>`; }
+}
+
+function splitPages(md) {
+  const p = md.replace(/\r\n/g,'\n').split(/\n?<div class="page-break"><\/div>\n?/);
+  return p.length ? p : [md];
+}
+
+function showError({ icon, title, desc, path, ghUrl }) {
+  document.getElementById('loading-box').style.display = 'none';
+  document.getElementById('eicon').textContent  = icon;
+  document.getElementById('etitle').textContent = title;
+  document.getElementById('edesc').innerHTML    = desc;
+  if (path) { document.getElementById('epath').style.display=''; document.getElementById('epath').textContent=path; }
+  document.getElementById('eurl-input').value = location.href;
+  const gl = document.getElementById('egh-link');
+  if (ghUrl) { gl.href=ghUrl; gl.style.display=''; }
+  document.getElementById('error-box').style.display = '';
+}
+
+function copyErrUrl() {
+  const val = document.getElementById('eurl-input').value;
+  const btn = document.getElementById('eurl-copy');
+  navigator.clipboard.writeText(val).then(()=>{
+    btn.textContent='✅ 복사됨!';
+    setTimeout(()=>{ btn.textContent='📋 복사'; },2000);
+  }).catch(()=>{ document.getElementById('eurl-input').select(); document.execCommand('copy'); });
+}
+
+function copyLink() {
+  navigator.clipboard.writeText(location.href).then(()=>{
+    const b=document.getElementById('btn-share'), o=b.textContent;
+    b.textContent='✅ 복사됨!'; setTimeout(()=>b.textContent=o,2000);
+  });
+}
+
+function renderPages(rawMd, fname) {
+  const pagesEl = document.getElementById('pages');
+  splitPages(rawMd).forEach((pageMd, i) => {
+    const div = document.createElement('div');
+    div.className='preview-page'; div.dataset.page=i+1;
+    div.innerHTML = mdRender(pageMd);
+    div.querySelectorAll('a').forEach(a=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+    pagesEl.appendChild(div);
+  });
+  if (window.MathJax&&MathJax.typesetPromise) MathJax.typesetPromise([pagesEl]).catch(()=>{});
+
+  document.getElementById('loading-box').style.display = 'none';
+  pagesEl.style.display = 'flex';
+  document.getElementById('btn-share').style.display = '';
+  document.title = fname + ' — MD Viewer';
+  document.getElementById('doc-title').textContent = fname;
+
+  /* 페이지 번호 배지 */
+  const badge = document.getElementById('pg-badge');
+  const pages = pagesEl.querySelectorAll('.preview-page');
+  if (pages.length > 1) {
+    badge.style.display='block'; badge.textContent=`1 / ${pages.length}`;
+    window.addEventListener('scroll',()=>{
+      const mid=window.scrollY+window.innerHeight*0.3; let cur=0;
+      pages.forEach((p,i)=>{ if(p.offsetTop<=mid) cur=i; });
+      badge.textContent=`${cur+1} / ${pages.length}`;
+    },{passive:true});
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   메인 로드
+   우선순위:
+   1. ?doc=파일명  → 같은 저장소 ./docs/ 에서 직접 fetch (토큰 불필요)
+   2. ?repo=&path= → GitHub API 방식 (구 호환)
+══════════════════════════════════════════════════════ */
+async function load() {
+
+  /* ── 방식 1: 정적 fetch (md-viewer 저장소 내부) ── */
+  if (docParam) {
+    const fileName = docParam.endsWith('.md') ? docParam : docParam + '.md';
+    const fetchUrl = `./docs/${fileName}`;
+    const fname    = docParam.replace(/\.md$/i,'');
+
+    try {
+      const res = await fetch(fetchUrl);
+      if (!res.ok) {
+        showError({
+          icon:'🔍', title:'파일을 찾을 수 없습니다',
+          desc:`<code>docs/${fileName}</code> 파일이 이 저장소에 없습니다.<br>에디터에서 공개 Push를 먼저 진행하세요.`,
+          path:`요청 경로: ${location.origin}${location.pathname.replace(/view\.html$/,'')}docs/${fileName}`,
+          ghUrl:`https://github.com/shoutjoy/md-viewer`,
+        });
+        return;
+      }
+      const rawMd = await res.text();
+      renderPages(rawMd, fname);
+
+    } catch(e) {
+      showError({ icon:'❌', title:'문서 로드 실패', desc:e.message, ghUrl:null });
+    }
+    return;
+  }
+
+  /* ── 방식 2: GitHub API (repo+path 파라미터) ── */
+  if (repoParam && pathParam) {
+    const fname  = pathParam.split('/').pop().replace(/\.[^.]+$/,'');
+    try {
+      const apiUrl = `https://api.github.com/repos/${repoParam}/contents/${encodeURIComponent(pathParam)}?ref=${branchParam}`;
+      const headers = { 'Accept':'application/vnd.github+json' };
+      if (tokenParam) headers['Authorization'] = `token ${tokenParam}`;
+
+      const res = await fetch(apiUrl, { headers });
+      if (!res.ok) {
+        const errData = await res.json().catch(()=>({}));
+        const is404 = res.status===404;
+        showError({
+          icon: is404?'🔍':'🔒',
+          title: is404?'파일을 찾을 수 없습니다':'접근 권한 없음',
+          desc: is404
+            ? '경로를 확인하거나 저장소가 Public인지 확인하세요.'
+            : '비공개 저장소입니다. token 파라미터를 추가하세요.',
+          path:`저장소: ${repoParam}\n브랜치: ${branchParam}\n경로: ${pathParam}`,
+          ghUrl:`https://github.com/${repoParam}/tree/${branchParam}`,
+        });
+        return;
+      }
+      const data  = await res.json();
+      const rawMd = decodeURIComponent(escape(atob(data.content.replace(/\n/g,''))));
+      renderPages(rawMd, fname);
+
+    } catch(e) {
+      showError({ icon:'❌', title:'문서 로드 실패', desc:e.message, ghUrl:`https://github.com/${repoParam}` });
+    }
+    return;
+  }
+
+  /* ── 파라미터 없음 ── */
+  showError({
+    icon:'⚠️', title:'URL 파라미터 오류',
+    desc:'<code>?doc=파일명</code> 파라미터가 필요합니다.<br>예) <code>view.html?doc=LMS설계기법</code>',
+    ghUrl:'https://github.com/shoutjoy/md-viewer',
+  });
+}
+
+load();
+</script>
+</body>
+</html>
